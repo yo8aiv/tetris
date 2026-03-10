@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Tetris Arcade Sound</title>
+
+<style>
+body{
+background:#0b0b0b;
+color:white;
+text-align:center;
+font-family:Arial
+}
+
+canvas{
+background:black;
+border:3px solid cyan;
+box-shadow:0 0 15px cyan
+}
+
+.panel{
+display:flex;
+justify-content:center;
+gap:20px
+}
+
+.side{
+width:120px
+}
+
+.small{
+background:black;
+border:2px solid cyan
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>🧱 Tetris Arcade</h1>
+
+<div class="panel">
+
+<canvas id="game" width="240" height="400"></canvas>
+
+<div class="side">
+
+<p>Score<br><span id="score">0</span></p>
+<p>Lines<br><span id="lines">0</span></p>
+<p>Level<br><span id="level">1</span></p>
+<p>High<br><span id="high">0</span></p>
+
+<p>Next</p>
+<canvas id="next" class="small" width="80" height="80"></canvas>
+
+<p>Hold</p>
+<canvas id="hold" class="small" width="80" height="80"></canvas>
+
+</div>
+</div>
+
+<p>
+⬅ ➡ move |
+⬆ rotate |
+⬇ drop |
+C hold |
+A AI |
+P pause
+</p>
+
+<script>
+
+const audio=new (window.AudioContext||window.webkitAudioContext)()
+
+function beep(freq,time){
+
+const osc=audio.createOscillator()
+const gain=audio.createGain()
+
+osc.frequency.value=freq
+osc.type="square"
+
+osc.connect(gain)
+gain.connect(audio.destination)
+
+osc.start()
+
+gain.gain.setValueAtTime(0.2,audio.currentTime)
+gain.gain.exponentialRampToValueAtTime(0.001,audio.currentTime+time)
+
+osc.stop(audio.currentTime+time)
+
+}
+
+function sMove(){beep(200,0.05)}
+function sRotate(){beep(500,0.07)}
+function sDrop(){beep(120,0.1)}
+function sLine(){beep(800,0.15)}
+function sGameOver(){beep(60,0.5)}
+
+const canvas=document.getElementById("game")
+const ctx=canvas.getContext("2d")
+ctx.scale(20,20)
+
+const arena=createMatrix(12,20)
+
+const player={pos:{x:0,y:0},matrix:null}
+
+let score=0
+let lines=0
+let level=1
+
+let high=localStorage.getItem("tetrisHigh")||0
+document.getElementById("high").innerText=high
+
+const colors=[
+null,
+'#ff004d','#00e5ff','#7cff01',
+'#ffcc00','#ff6f00','#9c27b0','#ffffff'
+]
+
+const pieces="ILJOTSZ"
+
+let bag=[]
+
+function createMatrix(w,h){
+
+const m=[]
+while(h--)m.push(new Array(w).fill(0))
+return m
+
+}
+
+function refillBag(){
+
+bag=pieces.split('').sort(()=>Math.random()-0.5)
+
+}
+
+function randomPiece(){
+
+if(bag.length==0)refillBag()
+return createPiece(bag.pop())
+
+}
+
+function createPiece(type){
+
+if(type==='T')return[[0,1,0],[1,1,1],[0,0,0]]
+if(type==='O')return[[2,2],[2,2]]
+if(type==='L')return[[0,3,0],[0,3,0],[0,3,3]]
+if(type==='J')return[[0,4,0],[0,4,0],[4,4,0]]
+if(type==='I')return[[0,5,0,0],[0,5,0,0],[0,5,0,0],[0,5,0,0]]
+if(type==='S')return[[0,6,6],[6,6,0],[0,0,0]]
+if(type==='Z')return[[7,7,0],[0,7,7],[0,0,0]]
+
+}
+
+function drawMatrix(matrix,offset){
+
+matrix.forEach((row,y)=>{
+row.forEach((v,x)=>{
+if(v){
+
+ctx.fillStyle=colors[v]
+ctx.fillRect(x+offset.x,y+offset.y,1,1)
+
+}
+})
+})
+
+}
+
+function collide(arena,player){
+
+for(let y=0;y<player.matrix.length;y++)
+for(let x=0;x<player.matrix[y].length;x++)
+if(player.matrix[y][x] &&
+(arena[y+player.pos.y] &&
+arena[y+player.pos.y][x+player.pos.x])!==0)
+return true
+
+return false
+
+}
+
+function merge(){
+
+player.matrix.forEach((row,y)=>{
+row.forEach((v,x)=>{
+if(v)arena[y+player.pos.y][x+player.pos.x]=v
+})
+})
+
+}
+
+function sweep(){
+
+outer:for(let y=arena.length-1;y>=0;y--){
+
+for(let x=0;x<arena[y].length;x++)
+if(arena[y][x]==0)continue outer
+
+arena.splice(y,1)
+arena.unshift(new Array(12).fill(0))
+
+lines++
+score+=10
+
+sLine()
+
+}
+
+level=Math.floor(lines/10)+1
+
+if(score>high){
+high=score
+localStorage.setItem("tetrisHigh",high)
+}
+
+updateUI()
+
+}
+
+function playerReset(){
+
+player.matrix=randomPiece()
+player.pos.y=0
+player.pos.x=5
+
+if(collide(arena,player)){
+
+sGameOver()
+
+arena.forEach(r=>r.fill(0))
+score=0
+lines=0
+level=1
+
+}
+
+}
+
+function updateUI(){
+
+scoreEl.innerText=score
+linesEl.innerText=lines
+levelEl.innerText=level
+highEl.innerText=high
+
+}
+
+function drop(){
+
+player.pos.y++
+
+if(collide(arena,player)){
+
+player.pos.y--
+merge()
+sweep()
+playerReset()
+
+sDrop()
+
+}
+
+dropCounter=0
+
+}
+
+function move(dir){
+
+player.pos.x+=dir
+
+if(collide(arena,player))
+player.pos.x-=dir
+else
+sMove()
+
+}
+
+function rotate(matrix){
+
+for(let y=0;y<matrix.length;y++)
+for(let x=0;x<y;x++)
+[matrix[x][y],matrix[y][x]]=[matrix[y][x],matrix[x][y]]
+
+matrix.forEach(row=>row.reverse())
+
+}
+
+function rotatePlayer(){
+
+rotate(player.matrix)
+sRotate()
+
+}
+
+let dropCounter=0
+let lastTime=0
+
+function update(time=0){
+
+const delta=time-lastTime
+lastTime=time
+
+dropCounter+=delta
+
+if(dropCounter>800-(level*60))
+drop()
+
+draw()
+
+requestAnimationFrame(update)
+
+}
+
+function draw(){
+
+ctx.fillStyle="#000"
+ctx.fillRect(0,0,canvas.width,canvas.height)
+
+drawMatrix(arena,{x:0,y:0})
+drawMatrix(player.matrix,player.pos)
+
+}
+
+document.addEventListener("keydown",e=>{
+
+audio.resume()
+
+if(e.keyCode===37)move(-1)
+if(e.keyCode===39)move(1)
+if(e.keyCode===40)drop()
+if(e.keyCode===38)rotatePlayer()
+
+})
+
+const scoreEl=document.getElementById("score")
+const linesEl=document.getElementById("lines")
+const levelEl=document.getElementById("level")
+const highEl=document.getElementById("high")
+
+playerReset()
+updateUI()
+update()
+
+</script>
+
+</body>
+</html>
