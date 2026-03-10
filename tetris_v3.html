@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Arcade Tetris</title>
+
+<style>
+
+body{
+background:#0b0b0b;
+color:white;
+text-align:center;
+font-family:Arial;
+}
+
+h1{
+color:#00ffff;
+}
+
+canvas{
+background:black;
+border:3px solid #00ffff;
+box-shadow:0 0 20px #00ffff;
+}
+
+#panel{
+margin:10px;
+font-size:18px;
+}
+
+button{
+padding:10px;
+margin:4px;
+font-size:16px;
+}
+
+#mobile{
+margin-top:10px;
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>🧱 Arcade Tetris</h1>
+
+<div id="panel">
+Score: <span id="score">0</span> |
+Lines: <span id="lines">0</span> |
+Level: <span id="level">1</span> |
+Highscore: <span id="high">0</span>
+</div>
+
+<canvas id="game" width="240" height="400"></canvas>
+
+<p>⬅ ➡ move | ⬆ rotate | ⬇ drop | P pause | R restart</p>
+
+<div id="mobile">
+<button onclick="move(-1)">⬅</button>
+<button onclick="rotatePlayer()">⟳</button>
+<button onclick="move(1)">➡</button>
+<button onclick="drop()">⬇</button>
+</div>
+
+<audio id="rotateSound">
+<source src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg">
+</audio>
+
+<audio id="lineSound">
+<source src="https://actions.google.com/sounds/v1/cartoon/pop.ogg">
+</audio>
+
+<script>
+
+const canvas=document.getElementById("game")
+const ctx=canvas.getContext("2d")
+ctx.scale(20,20)
+
+const arena=createMatrix(12,20)
+
+const player={
+pos:{x:0,y:0},
+matrix:null
+}
+
+let score=0
+let lines=0
+let level=1
+let paused=false
+
+let high=localStorage.getItem("tetrisHigh")||0
+document.getElementById("high").innerText=high
+
+const colors=[
+null,
+'#ff004d',
+'#00e5ff',
+'#7cff01',
+'#ffcc00',
+'#ff6f00',
+'#9c27b0',
+'#ffffff'
+]
+
+function createMatrix(w,h){
+const m=[]
+while(h--) m.push(new Array(w).fill(0))
+return m
+}
+
+function createPiece(type){
+
+if(type==='T')
+return [[0,1,0],[1,1,1],[0,0,0]]
+
+if(type==='O')
+return [[2,2],[2,2]]
+
+if(type==='L')
+return [[0,3,0],[0,3,0],[0,3,3]]
+
+if(type==='J')
+return [[0,4,0],[0,4,0],[4,4,0]]
+
+if(type==='I')
+return [[0,5,0,0],[0,5,0,0],[0,5,0,0],[0,5,0,0]]
+
+if(type==='S')
+return [[0,6,6],[6,6,0],[0,0,0]]
+
+if(type==='Z')
+return [[7,7,0],[0,7,7],[0,0,0]]
+
+}
+
+function drawMatrix(matrix,offset,ghost=false){
+
+matrix.forEach((row,y)=>{
+row.forEach((value,x)=>{
+
+if(value!==0){
+
+ctx.fillStyle=ghost?"rgba(255,255,255,0.2)":colors[value]
+
+ctx.fillRect(
+x+offset.x,
+y+offset.y,
+1,1)
+
+}
+
+})
+})
+
+}
+
+function collide(arena,player){
+
+const m=player.matrix
+const o=player.pos
+
+for(let y=0;y<m.length;y++){
+for(let x=0;x<m[y].length;x++){
+
+if(m[y][x]!==0 &&
+(arena[y+o.y] &&
+arena[y+o.y][x+o.x])!==0){
+
+return true
+
+}
+
+}
+}
+
+return false
+}
+
+function merge(arena,player){
+
+player.matrix.forEach((row,y)=>{
+row.forEach((value,x)=>{
+
+if(value!==0)
+arena[y+player.pos.y][x+player.pos.x]=value
+
+})
+})
+
+}
+
+function ghostPosition(){
+
+let ghostY=player.pos.y
+
+while(!collide(arena,{pos:{x:player.pos.x,y:ghostY+1},matrix:player.matrix}))
+ghostY++
+
+return ghostY
+
+}
+
+function draw(){
+
+ctx.fillStyle="#000"
+ctx.fillRect(0,0,canvas.width,canvas.height)
+
+drawMatrix(arena,{x:0,y:0})
+
+let gy=ghostPosition()
+drawMatrix(player.matrix,{x:player.pos.x,y:gy},true)
+
+drawMatrix(player.matrix,player.pos)
+
+}
+
+function playerReset(){
+
+const pieces="ILJOTSZ"
+
+player.matrix=createPiece(
+pieces[Math.random()*pieces.length|0]
+)
+
+player.pos.y=0
+player.pos.x=(arena[0].length/2|0)-
+(player.matrix[0].length/2|0)
+
+if(collide(arena,player)){
+
+arena.forEach(row=>row.fill(0))
+
+score=0
+lines=0
+level=1
+
+}
+
+}
+
+function sweep(){
+
+outer: for(let y=arena.length-1;y>=0;y--){
+
+for(let x=0;x<arena[y].length;x++)
+if(arena[y][x]==0)
+continue outer
+
+arena.splice(y,1)
+arena.unshift(new Array(12).fill(0))
+y++
+
+lines++
+score+=10
+
+document.getElementById("lineSound").play()
+
+}
+
+level=Math.floor(lines/10)+1
+
+if(score>high){
+
+high=score
+localStorage.setItem("tetrisHigh",high)
+
+}
+
+updateUI()
+
+}
+
+function updateUI(){
+
+document.getElementById("score").innerText=score
+document.getElementById("lines").innerText=lines
+document.getElementById("level").innerText=level
+document.getElementById("high").innerText=high
+
+}
+
+function drop(){
+
+player.pos.y++
+
+if(collide(arena,player)){
+
+player.pos.y--
+merge(arena,player)
+playerReset()
+sweep()
+
+}
+
+dropCounter=0
+
+}
+
+function move(dir){
+
+player.pos.x+=dir
+
+if(collide(arena,player))
+player.pos.x-=dir
+
+}
+
+function rotate(matrix){
+
+for(let y=0;y<matrix.length;y++){
+for(let x=0;x<y;x++){
+
+[matrix[x][y],matrix[y][x]]=
+[matrix[y][x],matrix[x][y]]
+
+}
+}
+
+matrix.forEach(row=>row.reverse())
+
+}
+
+function rotatePlayer(){
+
+rotate(player.matrix)
+
+document.getElementById("rotateSound").play()
+
+}
+
+let dropCounter=0
+let lastTime=0
+
+function update(time=0){
+
+if(paused){
+requestAnimationFrame(update)
+return
+}
+
+const delta=time-lastTime
+lastTime=time
+
+dropCounter+=delta
+
+if(dropCounter>800-(level*60))
+drop()
+
+draw()
+
+requestAnimationFrame(update)
+
+}
+
+document.addEventListener("keydown",e=>{
+
+if(e.keyCode===37) move(-1)
+if(e.keyCode===39) move(1)
+if(e.keyCode===40) drop()
+if(e.keyCode===38) rotatePlayer()
+
+if(e.key==="p"||e.key==="P")
+paused=!paused
+
+if(e.key==="r"||e.key==="R")
+location.reload()
+
+})
+
+playerReset()
+updateUI()
+update()
+
+</script>
+
+</body>
+</html>
