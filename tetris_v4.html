@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Arcade+ Tetris</title>
+
+<style>
+
+body{
+background:#0b0b0b;
+color:white;
+text-align:center;
+font-family:Arial;
+}
+
+h1{color:#00ffff}
+
+.container{
+display:flex;
+justify-content:center;
+gap:20px;
+}
+
+canvas{
+background:black;
+border:3px solid #00ffff;
+box-shadow:0 0 20px #00ffff;
+}
+
+.panel{
+width:140px;
+}
+
+.small{
+border:2px solid #00ffff;
+background:black;
+}
+
+button{
+padding:8px;
+margin:4px;
+font-size:16px;
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>🧱 Arcade+ Tetris</h1>
+
+<div class="container">
+
+<canvas id="game" width="240" height="400"></canvas>
+
+<div class="panel">
+
+<p>Score<br><span id="score">0</span></p>
+<p>Lines<br><span id="lines">0</span></p>
+<p>Level<br><span id="level">1</span></p>
+<p>High<br><span id="high">0</span></p>
+
+<p>Next</p>
+<canvas id="next" class="small" width="80" height="80"></canvas>
+
+<p>Hold (C)</p>
+<canvas id="hold" class="small" width="80" height="80"></canvas>
+
+</div>
+
+</div>
+
+<p>
+⬅ ➡ move |
+⬆ rotate |
+⬇ drop |
+C hold |
+P pause
+</p>
+
+<div>
+<button onclick="move(-1)">⬅</button>
+<button onclick="rotatePlayer()">⟳</button>
+<button onclick="move(1)">➡</button>
+<button onclick="drop()">⬇</button>
+<button onclick="hold()">HOLD</button>
+</div>
+
+<script>
+
+const canvas=document.getElementById("game")
+const ctx=canvas.getContext("2d")
+ctx.scale(20,20)
+
+const nextCanvas=document.getElementById("next")
+const nextCtx=nextCanvas.getContext("2d")
+nextCtx.scale(20,20)
+
+const holdCanvas=document.getElementById("hold")
+const holdCtx=holdCanvas.getContext("2d")
+holdCtx.scale(20,20)
+
+const arena=createMatrix(12,20)
+
+let score=0
+let lines=0
+let level=1
+let paused=false
+
+let holdPiece=null
+let holdUsed=false
+
+let nextPiece=null
+
+let high=localStorage.getItem("tetrisHigh")||0
+document.getElementById("high").innerText=high
+
+const colors=[
+null,
+'#ff004d',
+'#00e5ff',
+'#7cff01',
+'#ffcc00',
+'#ff6f00',
+'#9c27b0',
+'#ffffff'
+]
+
+const pieces="ILJOTSZ"
+
+const player={
+pos:{x:0,y:0},
+matrix:null
+}
+
+function createMatrix(w,h){
+const m=[]
+while(h--)m.push(new Array(w).fill(0))
+return m
+}
+
+function createPiece(type){
+
+if(type==='T') return [[0,1,0],[1,1,1],[0,0,0]]
+if(type==='O') return [[2,2],[2,2]]
+if(type==='L') return [[0,3,0],[0,3,0],[0,3,3]]
+if(type==='J') return [[0,4,0],[0,4,0],[4,4,0]]
+if(type==='I') return [[0,5,0,0],[0,5,0,0],[0,5,0,0],[0,5,0,0]]
+if(type==='S') return [[0,6,6],[6,6,0],[0,0,0]]
+if(type==='Z') return [[7,7,0],[0,7,7],[0,0,0]]
+
+}
+
+function randomPiece(){
+return createPiece(pieces[Math.random()*pieces.length|0])
+}
+
+function drawMatrix(matrix,offset,ghost=false,context=ctx){
+
+matrix.forEach((row,y)=>{
+row.forEach((value,x)=>{
+
+if(value){
+
+context.fillStyle=ghost?
+"rgba(255,255,255,0.2)":colors[value]
+
+context.fillRect(x+offset.x,y+offset.y,1,1)
+
+}
+
+})
+})
+
+}
+
+function collide(arena,player){
+
+const m=player.matrix
+const o=player.pos
+
+for(let y=0;y<m.length;y++){
+for(let x=0;x<m[y].length;x++){
+
+if(m[y][x] &&
+(arena[y+o.y] &&
+arena[y+o.y][x+o.x])!==0)
+
+return true
+
+}
+}
+
+return false
+
+}
+
+function merge(arena,player){
+
+player.matrix.forEach((row,y)=>{
+row.forEach((v,x)=>{
+
+if(v) arena[y+player.pos.y][x+player.pos.x]=v
+
+})
+})
+
+}
+
+function ghostY(){
+
+let y=player.pos.y
+
+while(!collide(arena,{pos:{x:player.pos.x,y:y+1},matrix:player.matrix}))
+y++
+
+return y
+
+}
+
+function draw(){
+
+ctx.fillStyle="#000"
+ctx.fillRect(0,0,canvas.width,canvas.height)
+
+drawMatrix(arena,{x:0,y:0})
+
+drawMatrix(player.matrix,{x:player.pos.x,y:ghostY()},true)
+
+drawMatrix(player.matrix,player.pos)
+
+}
+
+function sweep(){
+
+outer: for(let y=arena.length-1;y>=0;y--){
+
+for(let x=0;x<arena[y].length;x++)
+if(arena[y][x]==0)
+continue outer
+
+arena.splice(y,1)
+arena.unshift(new Array(12).fill(0))
+y--
+
+lines++
+score+=10
+
+}
+
+level=Math.floor(lines/10)+1
+
+if(score>high){
+
+high=score
+localStorage.setItem("tetrisHigh",high)
+
+}
+
+updateUI()
+
+}
+
+function playerReset(){
+
+if(!nextPiece)
+nextPiece=randomPiece()
+
+player.matrix=nextPiece
+nextPiece=randomPiece()
+
+drawPreview(nextCtx,nextPiece)
+
+player.pos.y=0
+player.pos.x=(arena[0].length/2|0)-
+(player.matrix[0].length/2|0)
+
+holdUsed=false
+
+if(collide(arena,player)){
+
+arena.forEach(row=>row.fill(0))
+score=0
+lines=0
+level=1
+
+}
+
+}
+
+function hold(){
+
+if(holdUsed) return
+
+if(!holdPiece){
+
+holdPiece=player.matrix
+playerReset()
+
+}else{
+
+let temp=holdPiece
+holdPiece=player.matrix
+player.matrix=temp
+
+}
+
+drawPreview(holdCtx,holdPiece)
+
+player.pos.y=0
+player.pos.x=5
+
+holdUsed=true
+
+}
+
+function drawPreview(context,piece){
+
+context.fillStyle="#000"
+context.fillRect(0,0,80,80)
+
+drawMatrix(piece,{x:1,y:1},false,context)
+
+}
+
+function updateUI(){
+
+document.getElementById("score").innerText=score
+document.getElementById("lines").innerText=lines
+document.getElementById("level").innerText=level
+document.getElementById("high").innerText=high
+
+}
+
+function drop(){
+
+player.pos.y++
+
+if(collide(arena,player)){
+
+player.pos.y--
+merge(arena,player)
+
+sweep()
+playerReset()
+
+}
+
+dropCounter=0
+
+}
+
+function move(dir){
+
+player.pos.x+=dir
+
+if(collide(arena,player))
+player.pos.x-=dir
+
+}
+
+function rotate(matrix){
+
+for(let y=0;y<matrix.length;y++){
+for(let x=0;x<y;x++){
+
+[matrix[x][y],matrix[y][x]]=
+[matrix[y][x],matrix[x][y]]
+
+}
+}
+
+matrix.forEach(row=>row.reverse())
+
+}
+
+function rotatePlayer(){
+rotate(player.matrix)
+}
+
+let dropCounter=0
+let lastTime=0
+
+function update(time=0){
+
+if(paused){
+
+requestAnimationFrame(update)
+return
+
+}
+
+const delta=time-lastTime
+lastTime=time
+
+dropCounter+=delta
+
+if(dropCounter>800-(level*60))
+drop()
+
+draw()
+
+requestAnimationFrame(update)
+
+}
+
+document.addEventListener("keydown",e=>{
+
+if(e.keyCode===37) move(-1)
+if(e.keyCode===39) move(1)
+if(e.keyCode===40) drop()
+if(e.keyCode===38) rotatePlayer()
+
+if(e.key==="c"||e.key==="C") hold()
+
+if(e.key==="p"||e.key==="P") paused=!paused
+
+if(e.key==="r"||e.key==="R") location.reload()
+
+})
+
+playerReset()
+updateUI()
+update()
+
+</script>
+
+</body>
+</html>
