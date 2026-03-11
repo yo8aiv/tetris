@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Retro Tetris</title>
+
+<style>
+
+body{
+background:#0f380f;
+color:#9bbc0f;
+font-family:monospace;
+text-align:center
+}
+
+canvas{
+background:#306230;
+border:4px solid #9bbc0f
+}
+
+.panel{
+display:flex;
+justify-content:center;
+gap:20px
+}
+
+.side{
+width:120px
+}
+
+button{
+padding:8px;
+margin:5px;
+font-family:monospace
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>RETRO TETRIS</h1>
+
+<div class="panel">
+
+<canvas id="game" width="240" height="400"></canvas>
+
+<div class="side">
+
+<p>SCORE<br><span id="score">0</span></p>
+<p>LINES<br><span id="lines">0</span></p>
+<p>LEVEL<br><span id="level">1</span></p>
+
+<button onclick="toggleMusic()">🎵 MUSIC</button>
+<button onclick="toggleMute()">🔇 MUTE</button>
+
+</div>
+</div>
+
+<p>
+⬅ ➡ move | ⬆ rotate | ⬇ drop | A AI
+</p>
+
+<script>
+
+const audio=new (window.AudioContext||window.webkitAudioContext)()
+
+let muted=false
+let music=false
+
+function tone(freq,dur){
+
+if(muted) return
+
+const o=audio.createOscillator()
+const g=audio.createGain()
+
+o.type="square"
+o.frequency.value=freq
+
+o.connect(g)
+g.connect(audio.destination)
+
+g.gain.value=0.1
+
+o.start()
+setTimeout(()=>o.stop(),dur)
+
+}
+
+function moveSound(){tone(200,40)}
+function rotateSound(){tone(500,50)}
+function lineSound(){tone(900,120)}
+
+function toggleMute(){
+
+muted=!muted
+
+}
+
+function toggleMusic(){
+
+music=!music
+
+if(music) playTheme()
+
+}
+
+function playTheme(){
+
+if(!music || muted) return
+
+const notes=[
+659,494,523,587,523,494,440,
+440,523,659,587,523,494,
+523,587,659,523,440,440
+]
+
+let t=0
+
+notes.forEach(n=>{
+setTimeout(()=>tone(n,120),t)
+t+=150
+})
+
+setTimeout(playTheme,t)
+
+}
+
+const canvas=document.getElementById("game")
+const ctx=canvas.getContext("2d")
+ctx.scale(20,20)
+
+const arena=createMatrix(12,20)
+
+const player={pos:{x:0,y:0},matrix:null}
+
+let score=0
+let lines=0
+let level=1
+let ai=false
+
+const colors=[
+null,
+'#9bbc0f','#8bac0f','#306230','#0f380f',
+'#9bbc0f','#8bac0f','#306230'
+]
+
+const pieces="ILJOTSZ"
+
+let bag=[]
+
+function createMatrix(w,h){
+const m=[]
+while(h--)m.push(new Array(w).fill(0))
+return m
+}
+
+function refillBag(){
+bag=pieces.split('').sort(()=>Math.random()-0.5)
+}
+
+function randomPiece(){
+
+if(bag.length==0)refillBag()
+return createPiece(bag.pop())
+
+}
+
+function createPiece(type){
+
+if(type==='T')return[[0,1,0],[1,1,1],[0,0,0]]
+if(type==='O')return[[2,2],[2,2]]
+if(type==='L')return[[0,3,0],[0,3,0],[0,3,3]]
+if(type==='J')return[[0,4,0],[0,4,0],[4,4,0]]
+if(type==='I')return[[0,5,0,0],[0,5,0,0],[0,5,0,0],[0,5,0,0]]
+if(type==='S')return[[0,6,6],[6,6,0],[0,0,0]]
+if(type==='Z')return[[7,7,0],[0,7,7],[0,0,0]]
+
+}
+
+function drawMatrix(matrix,offset){
+
+matrix.forEach((row,y)=>{
+row.forEach((v,x)=>{
+
+if(v){
+
+ctx.fillStyle=colors[v]
+ctx.fillRect(x+offset.x,y+offset.y,1,1)
+
+}
+
+})
+})
+
+}
+
+function collide(arena,player){
+
+for(let y=0;y<player.matrix.length;y++)
+for(let x=0;x<player.matrix[y].length;x++)
+if(player.matrix[y][x] &&
+(arena[y+player.pos.y] &&
+arena[y+player.pos.y][x+player.pos.x])!==0)
+return true
+
+return false
+
+}
+
+function merge(){
+
+player.matrix.forEach((row,y)=>{
+row.forEach((v,x)=>{
+if(v)arena[y+player.pos.y][x+player.pos.x]=v
+})
+})
+
+}
+
+function sweep(){
+
+outer:for(let y=arena.length-1;y>=0;y--){
+
+for(let x=0;x<arena[y].length;x++)
+if(arena[y][x]==0)continue outer
+
+arena.splice(y,1)
+arena.unshift(new Array(12).fill(0))
+
+lines++
+score+=10
+
+lineSound()
+
+}
+
+level=Math.floor(lines/10)+1
+updateUI()
+
+}
+
+function playerReset(){
+
+player.matrix=randomPiece()
+player.pos.y=0
+player.pos.x=5
+
+if(collide(arena,player)){
+
+arena.forEach(r=>r.fill(0))
+
+score=0
+lines=0
+level=1
+
+}
+
+}
+
+function updateUI(){
+
+scoreEl.innerText=score
+linesEl.innerText=lines
+levelEl.innerText=level
+
+}
+
+function drop(){
+
+player.pos.y++
+
+if(collide(arena,player)){
+
+player.pos.y--
+merge()
+sweep()
+playerReset()
+
+}
+
+dropCounter=0
+
+}
+
+function move(dir){
+
+player.pos.x+=dir
+
+if(collide(arena,player))
+player.pos.x-=dir
+else
+moveSound()
+
+}
+
+function rotate(matrix){
+
+for(let y=0;y<matrix.length;y++)
+for(let x=0;x<y;x++)
+[matrix[x][y],matrix[y][x]]=[matrix[y][x],matrix[x][y]]
+
+matrix.forEach(row=>row.reverse())
+
+}
+
+function rotatePlayer(){
+
+rotate(player.matrix)
+rotateSound()
+
+}
+
+function aiMove(){
+
+let target=5
+
+if(player.pos.x<target)move(1)
+if(player.pos.x>target)move(-1)
+
+drop()
+
+}
+
+let dropCounter=0
+let lastTime=0
+
+function update(time=0){
+
+const delta=time-lastTime
+lastTime=time
+
+dropCounter+=delta
+
+if(ai)aiMove()
+
+if(dropCounter>800-(level*60))
+drop()
+
+draw()
+
+requestAnimationFrame(update)
+
+}
+
+function draw(){
+
+ctx.fillStyle="#306230"
+ctx.fillRect(0,0,canvas.width,canvas.height)
+
+drawMatrix(arena,{x:0,y:0})
+drawMatrix(player.matrix,player.pos)
+
+}
+
+document.addEventListener("keydown",e=>{
+
+audio.resume()
+
+if(e.keyCode===37)move(-1)
+if(e.keyCode===39)move(1)
+if(e.keyCode===40)drop()
+if(e.keyCode===38)rotatePlayer()
+
+if(e.key==="a"||e.key==="A")ai=!ai
+
+})
+
+const scoreEl=document.getElementById("score")
+const linesEl=document.getElementById("lines")
+const levelEl=document.getElementById("level")
+
+playerReset()
+updateUI()
+update()
+
+</script>
+
+</body>
+</html>
